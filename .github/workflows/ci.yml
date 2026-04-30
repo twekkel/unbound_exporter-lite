@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+
+    - uses: actions/checkout@v5
+
+    - name: Build
+      run: |
+        podman build --target binary -o . .
+
+    - name: Test help / usage
+      run: ./unbound_exporter --help| grep "Unbound Exporter Lite"
+
+    - name: Stop Daemon
+      if: always()
+      run: |
+        if [ -f exporter.pid ]; then
+          kill $(cat exporter.pid)
+            echo "Daemon gestopt."
+        fi

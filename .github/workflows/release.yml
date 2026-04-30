@@ -1,0 +1,62 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            binary_suffix: amd64
+          - platform: linux/arm64
+            binary_suffix: arm64
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v4
+
+    - name: Build (${{ matrix.platform }})
+      run: |
+        podman build --platform ${{ matrix.platform }} --target binary -o . .
+        mv unbound_exporter unbound_exporter-${{ matrix.binary_suffix }}
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: unbound_exporter-${{ matrix.binary_suffix }}
+        path: unbound_exporter-${{ matrix.binary_suffix }}
+
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare & checksum
+      run: |
+        find artifacts -name 'unbound_exporter-*' -exec cp {} . \;
+        sha256sum unbound_exporter-amd64 unbound_exporter-arm64 > checksums.txt
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v3
+      with:
+        name: Release ${{ github.ref_name }}
+        generate_release_notes: true
+        files: |
+          unbound_exporter-amd64
+          unbound_exporter-arm64
+          checksums.txt
