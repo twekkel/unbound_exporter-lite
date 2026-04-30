@@ -21,17 +21,19 @@ A minimal, high‑performance implementation of the standard `unbound_exporter` 
 
 ---
 
-## Official unbound_exporter vs lite version
+## "Official" unbound_exporter vs lite version
 
 | Aspect         | Unbound Exporter               | unbound_exporter-lite     |
 | -------------- | ------------------------------ | ------------------------- |
 | Language       | Go                             | Nim                       |
-| Binary size    | ~22 MB                         | ~500 kB                   |
-| Footprint      | ~23 MB                         | < 1 MB                    |
+| Binary size    | ~11 MB                         | ~500 kB                   |
+| Footprint      | ~13 MB                         | < 1 MB                    |
 | Resource usage | Higher (depends on collectors) | Low and predictable       |
 | Platform       | Many *nix systems              | Linux only                |
 | Complexity     | Higher                         | Very low                  |
 | Use case       | General-purpose monitoring     | Lightweight               |
+
+The Lite version only supports HTTP, no HTTPS.
 
 ## Building
 
