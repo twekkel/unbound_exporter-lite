@@ -358,7 +358,7 @@ proc getMetrics(socketPath: string): string =
           "Total number of queries refused or dropped due to access control settings.", val)
 
       elif key == "unwanted.replies":
-        addMetric("unwanted_replies_total", "counter",
+        addMetric("unbound_unwanted_replies_total", "counter",
           "Total number of replies that were unwanted or unsolicited.", val)
 
       elif key == "time.now":
