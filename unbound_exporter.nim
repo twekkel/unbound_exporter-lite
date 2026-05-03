@@ -86,7 +86,6 @@ proc getMetrics(socketPath: string): string =
   var cumulativeCount = 0.0
   var histAvg         = 0.0
 
-  # --- Version ---
   addMetric("unbound_exporter_build_info", "gauge",
     "A metric with a constant '1' value labeled by version, and nimversion",
     "1", &"""version="{expVer}",nimversion="{nimVer}"""")
@@ -125,7 +124,6 @@ proc getMetrics(socketPath: string): string =
       let tidStr   = if isThread: key.split('.')[0].replace("thread", "") else: ""
       let tlabel   = if tidStr == "": "" else: "thread=\"" & tidStr & "\""
 
-      # --- Cache hits / misses ---
       if key.contains(".num.cachehits"):
         addMetric("unbound_cache_hits_total", "counter",
           "Total number of queries that were successfully answered using a cache lookup.",
@@ -136,7 +134,6 @@ proc getMetrics(socketPath: string): string =
           "Total number of cache queries that needed recursive processing.",
           val, tlabel, "unbound_cache_misses_total")
 
-      # --- Queries total ---
       elif key.endsWith(".num.queries"):
         if isThread:
           addMetric("unbound_queries_total", "counter",
@@ -148,30 +145,25 @@ proc getMetrics(socketPath: string): string =
             "Total number of queries received.",
             val, "", "unbound_queries_total")
 
-      # --- Expired (serve-expired) ---
       elif key == "total.num.expired":
         addMetric("unbound_expired_total", "counter",
           "Total number of expired entries served.", val)
 
-      # --- Prefetch ---
       elif key.contains(".num.prefetch"):
         addMetric("unbound_prefetches_total", "counter",
           "Total number of cache prefetches performed.",
           val, tlabel, "unbound_prefetches_total")
 
-      # --- Recursive responses ---
       elif key.contains(".num.recursivereplies"):
         addMetric("unbound_recursive_replies_total", "counter",
           "Total number of replies sent to queries that needed recursive processing.",
           val, tlabel, "unbound_recursive_replies_total")
 
-      # --- IP rate-limiting ---
       elif key.contains(".num.queries_ip_ratelimited"):
         addMetric("unbound_queries_ip_ratelimited_total", "counter",
           "Total queries rate limited by IP.",
           val, tlabel, "unbound_queries_ip_ratelimited_total")
 
-      # --- DNS Cookies ---
       elif key.contains(".num.queries_cookie_valid"):
         addMetric("unbound_queries_cookie_valid_total", "counter",
           "Total number of queries with a valid DNS cookie.",
@@ -187,14 +179,12 @@ proc getMetrics(socketPath: string): string =
           "Total number of queries with an invalid DNS cookie.",
           val, tlabel, "unbound_queries_cookie_invalid_total")
 
-      # --- RCODEs (extended-statistics: yes) ---
       elif key.startsWith("num.answer.rcode."):
         let rcode = key.split('.')[^1]
         addMetric("unbound_answer_rcodes_total", "counter",
           "Total number of answers to queries, from cache or from recursion, by response code.",
           val, "rcode=\"" & rcode & "\"", "unbound_answer_rcodes_total")
 
-      # --- DNSSEC (extended-statistics: yes) ---
       elif key == "num.answer.secure":
         addMetric("unbound_answers_secure_total", "counter",
           "Total number of answers that were secure (DNSSEC validated).", val)
@@ -207,7 +197,6 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_rrset_bogus_total", "counter",
           "Total number of rrsets marked bogus by the validator.", val)
 
-      # --- Query types / classes / opcodes / flags (extended-statistics: yes) ---
       elif key.startsWith("num.query.type."):
         let qtype = key.split('.')[^1]
         addMetric("unbound_query_types_total", "counter",
@@ -232,7 +221,6 @@ proc getMetrics(socketPath: string): string =
           "Total number of queries that had a given flag set in the header.",
           val, "flag=\"" & flag & "\"", "unbound_query_flags_total")
 
-      # --- Query transport ---
       elif key == "num.query.ipv6":
         addMetric("unbound_query_ipv6_total", "counter",
           "Total number of queries made using IPv6 towards the Unbound server.", val)
@@ -261,7 +249,6 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_query_https_total", "counter",
           "Total number of DoH queries made towards the Unbound server.", val)
 
-      # --- EDNS ---
       elif key == "num.query.edns.present":
         addMetric("unbound_query_edns_present_total", "counter",
           "Total number of queries that had an EDNS OPT record present.", val)
@@ -270,21 +257,18 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_query_edns_DO_total", "counter",
           "Total number of queries with EDNS DO (DNSSEC OK) bit set.", val)
 
-      # --- Aggressive NSEC (extended-statistics: yes) ---
       elif key.startsWith("num.query.aggressive."):
         let rcode = key.split('.')[^1]
         addMetric("unbound_query_aggressive_nsec", "counter",
           "Total number of queries answered using Aggressive NSEC.",
           val, "rcode=\"" & rcode & "\"", "unbound_query_aggressive_nsec")
 
-      # --- RPZ (extended-statistics: yes) ---
       elif key.startsWith("num.rpz.action."):
         let action = key.split('.')[^1].replace("rpz-", "")
         addMetric("unbound_rpz_action_count", "counter",
           "Total number of triggered Response Policy Zone actions, by type.",
           val, "type=\"" & action & "\"", "unbound_rpz_action_count")
 
-      # --- Requestlist ---
       elif key.contains(".requestlist.avg"):
         addMetric("unbound_request_list_avg", "gauge",
           "Average number of requests in the internal requestlist.",
@@ -315,7 +299,6 @@ proc getMetrics(socketPath: string): string =
           "Current size of the request list, only counting the requests from client queries.",
           val, tlabel, "unbound_request_list_current_user")
 
-      # --- Recursion timing ---
       elif key.contains(".recursion.time.avg"):
         if key.startsWith("total"):
           histAvg = val.parseFloat()
@@ -328,7 +311,6 @@ proc getMetrics(socketPath: string): string =
           "Median time it took to answer queries that needed recursive processing.",
           val, tlabel, "unbound_recursion_time_seconds_median")
 
-      # --- Memory: caches & modules ---
       elif key.startsWith("mem.cache."):
         let cname = key.split('.')[2]
         addMetric("unbound_memory_caches_bytes", "gauge",
@@ -355,7 +337,6 @@ proc getMetrics(socketPath: string): string =
           "Memory used by DoH buffers, in bytes.",
           val, "buffer=\"" & buf & "\"", "unbound_memory_doh_bytes")
 
-      # --- Cache item counts ---
       elif key == "msg.cache.count":
         addMetric("unbound_msg_cache_count", "gauge",
           "The number of messages cached.", val)
@@ -372,7 +353,6 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_rrset_cache_max_collisions_total", "counter",
           "Total number of rrset cache hashtable collisions.", val)
 
-      # --- Unwanted traffic ---
       elif key == "unwanted.queries":
         addMetric("unbound_unwanted_queries_total", "counter",
           "Total number of queries refused or dropped due to access control settings.", val)
@@ -381,7 +361,6 @@ proc getMetrics(socketPath: string): string =
         addMetric("unwanted_replies_total", "counter",
           "Total number of replies that were unwanted or unsolicited.", val)
 
-      # --- Tijd ---
       elif key == "time.now":
         addMetric("unbound_time_now_seconds", "gauge",
           "Current time in seconds since 1970.", val)
@@ -394,7 +373,6 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_time_elapsed_seconds", "counter",
           "Time since last statistics printout in seconds.", val)
 
-      # --- Histogram ---
       elif key.startsWith("histogram."):
         let parts = key.split(".to.")
         if parts.len == 2:
