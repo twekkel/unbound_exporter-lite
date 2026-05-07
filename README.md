@@ -73,3 +73,8 @@ Run it with:
 | `--web.listen-address=[ADDR]:PORT` | Address and port to listen on (default: `0.0.0.0:9167`) |
 | `--unbound.host=unix:///run/unbound.ctl` | Path to the real host root filesystem (default: /var/run/unbound.ctl) |
 | `--help` | Show this help message |
+
+### See also
+
+* [unbound_exporter](https://github.com/letsencrypt/unbound_exporter)
+* [node_exporter Lite](https://github.com/twekkel/node_exporter-lite)
