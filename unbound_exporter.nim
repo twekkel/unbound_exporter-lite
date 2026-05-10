@@ -2,7 +2,7 @@ import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, strf
 
 const
   nimVer = NimVersion
-  expVer = "0.9.0"
+  expVer = "1.0.0"
   HTMLText      = "text/html; charset=utf-8"
   PlainText     = "text/plain; charset=utf-8"
   DefaultMetric = "text/plain; version=0.0.4; charset=utf-8"
