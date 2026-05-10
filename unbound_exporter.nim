@@ -1,11 +1,13 @@
-import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, sets, strformat, strutils, zippy
+import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, strformat, strutils, zippy
 
 const
   nimVer = NimVersion
   expVer = "0.9.0"
-  DefaultHTML   = "text/html; charset=utf-8"
+  HTMLText      = "text/html; charset=utf-8"
+  PlainText     = "text/plain; charset=utf-8"
   DefaultMetric = "text/plain; version=0.0.4; charset=utf-8"
   NoSniff       = ("x-content-type-options", "nosniff")
+  Gzip          = ("content-encoding", "gzip")
 
 type
   MetricEntry = object
@@ -13,29 +15,19 @@ type
 
   SocketReader = object
     fd: SocketHandle
-    buffer: array[4096, char]
+    buffer: array[8192, char]
     pos, len: int
 
 var
   metricStore {.threadvar.}: seq[MetricEntry]
 
-proc createHeaders(contentType: string, isGzip: bool = false): HttpHeaders =
-  result = newHttpHeaders([("content-type", contentType), NoSniff])
-  if isGzip:
-    result.add("content-encoding", "gzip")
-
-var
-  htmlHeaders    {.threadvar.}: HttpHeaders
-  genericHeaders {.threadvar.}: HttpHeaders
-  gzipHeaders    {.threadvar.}: HttpHeaders
-  noGzipHeaders  {.threadvar.}: HttpHeaders
-
 const IndexPage = """<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Unbound Exporter Lite</title></head>
 <body>
-  <h1>Unbound Exporter Lite</h1>
+  <h1>Unbound Exporter Lite """ & expVer & """</h1>
   <p><a href="/metrics">Metrics</a></p>
+  <p><a href="/health">Health</a></p>
 </body>
 </html>
 """
@@ -81,10 +73,12 @@ proc parseListenAddress(val: string): (string, int) =
 # --- Metrics ---
 proc getMetrics(socketPath: string): string =
   metricStore.setLen(0)
-  var totalQueries    = 0.0
-  var bucketSeen      = false
-  var cumulativeCount = 0.0
-  var histAvg         = 0.0
+  result = newStringOfCap(16384)
+  var
+    bucketSeen      = false
+    cumulativeCount = 0.0
+    histAvg         = 0.0
+    totalQueries    = 0.0
 
   addMetric("unbound_exporter_build_info", "gauge",
     "A metric with a constant '1' value labeled by version, and nimversion",
@@ -112,7 +106,7 @@ proc getMetrics(socketPath: string): string =
     var reader = SocketReader(fd: conn)
 
     while true:
-      let line = reader.nextLine().strip()
+      let line = reader.nextLine()
       if line == "": break
 
       let pos = line.find('=')
@@ -124,12 +118,12 @@ proc getMetrics(socketPath: string): string =
       let tidStr   = if isThread: key.split('.')[0].replace("thread", "") else: ""
       let tlabel   = if tidStr == "": "" else: "thread=\"" & tidStr & "\""
 
-      if key.contains(".num.cachehits"):
+      if key.endsWith(".num.cachehits"):
         addMetric("unbound_cache_hits_total", "counter",
           "Total number of queries that were successfully answered using a cache lookup.",
           val, tlabel, "unbound_cache_hits_total")
 
-      elif key.contains(".num.cachemiss"):
+      elif key.endsWith(".num.cachemiss"):
         addMetric("unbound_cache_misses_total", "counter",
           "Total number of cache queries that needed recursive processing.",
           val, tlabel, "unbound_cache_misses_total")
@@ -138,7 +132,7 @@ proc getMetrics(socketPath: string): string =
         if isThread:
           addMetric("unbound_queries_total", "counter",
             "Total number of queries received.",
-            val, "thread=\"" & tidStr & "\"", "unbound_queries_total")
+            val, &"""thread="{tidStr}"""", "unbound_queries_total")
         elif key == "total.num.queries":
           totalQueries = val.parseFloat()
           addMetric("unbound_queries_total", "counter",
@@ -149,32 +143,32 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_expired_total", "counter",
           "Total number of expired entries served.", val)
 
-      elif key.contains(".num.prefetch"):
+      elif key.endsWith(".num.prefetch"):
         addMetric("unbound_prefetches_total", "counter",
           "Total number of cache prefetches performed.",
           val, tlabel, "unbound_prefetches_total")
 
-      elif key.contains(".num.recursivereplies"):
+      elif key.endsWith(".num.recursivereplies"):
         addMetric("unbound_recursive_replies_total", "counter",
           "Total number of replies sent to queries that needed recursive processing.",
           val, tlabel, "unbound_recursive_replies_total")
 
-      elif key.contains(".num.queries_ip_ratelimited"):
+      elif key.endsWith(".num.queries_ip_ratelimited"):
         addMetric("unbound_queries_ip_ratelimited_total", "counter",
           "Total queries rate limited by IP.",
           val, tlabel, "unbound_queries_ip_ratelimited_total")
 
-      elif key.contains(".num.queries_cookie_valid"):
+      elif key.endsWith(".num.queries_cookie_valid"):
         addMetric("unbound_queries_cookie_valid_total", "counter",
           "Total number of queries with a valid DNS cookie.",
           val, tlabel, "unbound_queries_cookie_valid_total")
 
-      elif key.contains(".num.queries_cookie_client"):
+      elif key.endsWith(".num.queries_cookie_client"):
         addMetric("unbound_queries_cookie_client_total", "counter",
           "Total number of queries with a client-only DNS cookie.",
           val, tlabel, "unbound_queries_cookie_client_total")
 
-      elif key.contains(".num.queries_cookie_invalid"):
+      elif key.endsWith(".num.queries_cookie_invalid"):
         addMetric("unbound_queries_cookie_invalid_total", "counter",
           "Total number of queries with an invalid DNS cookie.",
           val, tlabel, "unbound_queries_cookie_invalid_total")
@@ -183,7 +177,7 @@ proc getMetrics(socketPath: string): string =
         let rcode = key.split('.')[^1]
         addMetric("unbound_answer_rcodes_total", "counter",
           "Total number of answers to queries, from cache or from recursion, by response code.",
-          val, "rcode=\"" & rcode & "\"", "unbound_answer_rcodes_total")
+          val, &"""rcode="{rcode}"""", "unbound_answer_rcodes_total")
 
       elif key == "num.answer.secure":
         addMetric("unbound_answers_secure_total", "counter",
@@ -201,25 +195,25 @@ proc getMetrics(socketPath: string): string =
         let qtype = key.split('.')[^1]
         addMetric("unbound_query_types_total", "counter",
           "Total number of queries with a given query type.",
-          val, "type=\"" & qtype & "\"", "unbound_query_types_total")
+          val, &"""type="{qtype}"""", "unbound_query_types_total")
 
       elif key.startsWith("num.query.class."):
         let qclass = key.split('.')[^1]
         addMetric("unbound_query_classes_total", "counter",
           "Total number of queries with a given query class.",
-          val, "class=\"" & qclass & "\"", "unbound_query_classes_total")
+          val, &"""class="{qclass}"""", "unbound_query_classes_total")
 
       elif key.startsWith("num.query.opcode."):
         let opcode = key.split('.')[^1]
         addMetric("unbound_query_opcodes_total", "counter",
           "Total number of queries with a given query opcode.",
-          val, "opcode=\"" & opcode & "\"", "unbound_query_opcodes_total")
+          val, &"""opcode="{opcode}"""", "unbound_query_opcodes_total")
 
       elif key.startsWith("num.query.flags."):
         let flag = key.split('.')[^1]
         addMetric("unbound_query_flags_total", "counter",
           "Total number of queries that had a given flag set in the header.",
-          val, "flag=\"" & flag & "\"", "unbound_query_flags_total")
+          val, &"""flag="{flag}"""", "unbound_query_flags_total")
 
       elif key == "num.query.ipv6":
         addMetric("unbound_query_ipv6_total", "counter",
@@ -261,52 +255,52 @@ proc getMetrics(socketPath: string): string =
         let rcode = key.split('.')[^1]
         addMetric("unbound_query_aggressive_nsec", "counter",
           "Total number of queries answered using Aggressive NSEC.",
-          val, "rcode=\"" & rcode & "\"", "unbound_query_aggressive_nsec")
+          val, &"""rcode="{rcode}"""", "unbound_query_aggressive_nsec")
 
       elif key.startsWith("num.rpz.action."):
         let action = key.split('.')[^1].replace("rpz-", "")
         addMetric("unbound_rpz_action_count", "counter",
           "Total number of triggered Response Policy Zone actions, by type.",
-          val, "type=\"" & action & "\"", "unbound_rpz_action_count")
+          val, &"""type="{action}"""", "unbound_rpz_action_count")
 
-      elif key.contains(".requestlist.avg"):
+      elif key.endsWith(".requestlist.avg"):
         addMetric("unbound_request_list_avg", "gauge",
           "Average number of requests in the internal requestlist.",
           val, tlabel, "unbound_request_list_avg")
 
-      elif key.contains(".requestlist.max"):
+      elif key.endsWith(".requestlist.max"):
         addMetric("unbound_request_list_max", "gauge",
           "Maximum size of the internal requestlist.",
           val, tlabel, "unbound_request_list_max")
 
-      elif key.contains(".requestlist.overwritten"):
+      elif key.endsWith(".requestlist.overwritten"):
         addMetric("unbound_request_list_overwritten_total", "counter",
           "Total number of requests in the request list that were overwritten by newer entries.",
           val, tlabel, "unbound_request_list_overwritten_total")
 
-      elif key.contains(".requestlist.exceeded"):
+      elif key.endsWith(".requestlist.exceeded"):
         addMetric("unbound_request_list_exceeded_total", "counter",
           "Total number of queries dropped because the request list was full.",
           val, tlabel, "unbound_request_list_exceeded_total")
 
-      elif key.contains(".requestlist.current.all"):
+      elif key.endsWith(".requestlist.current.all"):
         addMetric("unbound_request_list_current_all", "gauge",
           "Current size of the request list, including internally generated queries.",
           val, tlabel, "unbound_request_list_current_all")
 
-      elif key.contains(".requestlist.current.user"):
+      elif key.endsWith(".requestlist.current.user"):
         addMetric("unbound_request_list_current_user", "gauge",
           "Current size of the request list, only counting the requests from client queries.",
           val, tlabel, "unbound_request_list_current_user")
 
-      elif key.contains(".recursion.time.avg"):
+      elif key.endsWith(".recursion.time.avg"):
         if key.startsWith("total"):
           histAvg = val.parseFloat()
         addMetric("unbound_recursion_time_seconds_avg", "gauge",
           "Average time it took to answer queries that needed recursive processing.",
           val, tlabel, "unbound_recursion_time_seconds_avg")
 
-      elif key.contains(".recursion.time.median"):
+      elif key.endsWith(".recursion.time.median"):
         addMetric("unbound_recursion_time_seconds_median", "gauge",
           "Median time it took to answer queries that needed recursive processing.",
           val, tlabel, "unbound_recursion_time_seconds_median")
@@ -321,7 +315,7 @@ proc getMetrics(socketPath: string): string =
         let mname = key.split('.')[2]
         addMetric("unbound_memory_modules_bytes", "gauge",
           "Memory in bytes in use by modules.",
-          val, "module=\"" & mname & "\"", "unbound_memory_modules_bytes")
+          val, &"""module="{mname}"""", "unbound_memory_modules_bytes")
 
       elif key == "mem.total.sbrk":
         addMetric("unbound_memory_sbrk_bytes", "gauge",
@@ -335,7 +329,7 @@ proc getMetrics(socketPath: string): string =
         let buf = key.split('.')[2]
         addMetric("unbound_memory_doh_bytes", "gauge",
           "Memory used by DoH buffers, in bytes.",
-          val, "buffer=\"" & buf & "\"", "unbound_memory_doh_bytes")
+          val, &"""buffer="{buf}"""", "unbound_memory_doh_bytes")
 
       elif key == "msg.cache.count":
         addMetric("unbound_msg_cache_count", "gauge",
@@ -407,14 +401,14 @@ proc getMetrics(socketPath: string): string =
     if conn != SocketHandle(-1):
       discard close(conn)
 
-  # Sort end export
+  # Sort and export
   metricStore.sort(proc (x, y: MetricEntry): int = cmp(x.baseName, y.baseName))
-  var seenHeaders = initHashSet[string]()
+  var lastBase = ""
   for entry in metricStore:
-    if entry.baseName notin seenHeaders:
+    if entry.baseName != lastBase:
       result.add("# HELP " & entry.baseName & " " & entry.help & "\n")
       result.add("# TYPE " & entry.baseName & " " & entry.mtype & "\n")
-      seenHeaders.incl(entry.baseName)
+      lastBase = entry.baseName
     result.add(entry.name)
     if entry.labels != "": result.add("{" & entry.labels & "}")
     result.add(" " & entry.value & "\n")
@@ -436,14 +430,18 @@ Options:
 # --- Server ---
 proc main() {.async.} =
   const compressionLevel = BestSpeed
-  htmlHeaders    = createHeaders(DefaultHTML)
-  genericHeaders = createHeaders("text/plain; charset=utf-8")
-  gzipHeaders    = createHeaders(DefaultMetric, isGzip = true)
-  noGzipHeaders  = createHeaders(DefaultMetric)
-  var address    = "0.0.0.0"
-  var port       = 9167
-  var socketPath = "/var/run/unbound.ctl"
-  var p          = initOptParser()
+
+  let
+    htmlHeaders    = newHttpHeaders([("content-type", HTMLText), NoSniff])
+    genericHeaders = newHttpHeaders([("content-type", PlainText), NoSniff])
+    gzipHeaders    = newHttpHeaders([("content-type", DefaultMetric), NoSniff, Gzip])
+    noGzipHeaders  = newHttpHeaders([("content-type", DefaultMetric), NoSniff])
+
+  var
+    address    = "0.0.0.0"
+    port       = 9167
+    socketPath = "/var/run/unbound.ctl"
+    p          = initOptParser()
 
   for kind, key, val in p.getopt():
     case kind
