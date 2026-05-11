@@ -1,13 +1,14 @@
 import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, strformat, strutils, zippy
 
 const
-  nimVer = NimVersion
   expVer = "1.0.0"
-  HTMLText      = "text/html; charset=utf-8"
-  PlainText     = "text/plain; charset=utf-8"
-  DefaultMetric = "text/plain; version=0.0.4; charset=utf-8"
-  NoSniff       = ("x-content-type-options", "nosniff")
+  nimVer = NimVersion
+
+  DefaultMetric = ("content-type", "text/plain; version=0.0.4; charset=utf-8")
+  HTMLText      = ("content-type", "text/html; charset=utf-8")
+  PlainText     = ("content-type", "text/plain; charset=utf-8")
   Gzip          = ("content-encoding", "gzip")
+  NoSniff       = ("x-content-type-options", "nosniff")
 
 type
   MetricEntry = object
@@ -86,13 +87,13 @@ proc getMetrics(socketPath: string): string =
 
   let conn = socket(AF_UNIX, SOCK_STREAM, 0)
   if conn == SocketHandle(-1):
-    raise newException(OSError, "Could not read from socket")
+    raise newException(OSError, "Could not create socket handle")
 
   var address: SockAddr_un
   address.sun_family = AF_UNIX.uint16
 
   try:
-    if socketPath.len >= address.sun_path.len:
+    if socketPath.len > address.sun_path.high:
       raise newException(ValueError, "Socket path too long")
 
     copyMem(address.sun_path[0].addr, socketPath.cstring, socketPath.len)
@@ -432,10 +433,10 @@ proc main() {.async.} =
   const compressionLevel = BestSpeed
 
   let
-    htmlHeaders    = newHttpHeaders([("content-type", HTMLText), NoSniff])
-    genericHeaders = newHttpHeaders([("content-type", PlainText), NoSniff])
-    gzipHeaders    = newHttpHeaders([("content-type", DefaultMetric), NoSniff, Gzip])
-    noGzipHeaders  = newHttpHeaders([("content-type", DefaultMetric), NoSniff])
+    htmlHeaders    = newHttpHeaders([HTMLText, NoSniff])
+    genericHeaders = newHttpHeaders([PlainText, NoSniff])
+    gzipHeaders    = newHttpHeaders([DefaultMetric, NoSniff, Gzip])
+    noGzipHeaders  = newHttpHeaders([DefaultMetric, NoSniff])
 
   var
     address    = "0.0.0.0"
@@ -456,8 +457,8 @@ proc main() {.async.} =
       else: displayUsage()
     else: displayUsage()
 
-  if not posix.access(socketPath.cstring, posix.R_OK) == 0:
-    raise newException(OSError, "Could not read from socket")
+  if posix.access(socketPath.cstring, posix.R_OK) != 0:
+    raise newException(OSError, &"Could not read from socket: {socketPath}")
 
   addHandler(newConsoleLogger(fmtStr = "$levelname: "))
 
