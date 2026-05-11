@@ -22,13 +22,13 @@ type
 var
   metricStore {.threadvar.}: seq[MetricEntry]
 
-const IndexPage = """<!DOCTYPE html>
+const IndexPage = &"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Unbound Exporter Lite</title></head>
 <body>
-  <h1>Unbound Exporter Lite """ & expVer & """</h1>
-  <p><a href="/metrics">Metrics</a></p>
+  <h1>Unbound Exporter Lite {expVer}</h1>
   <p><a href="/health">Health</a></p>
+  <p><a href="/metrics">Metrics</a></p>
 </body>
 </html>
 """
@@ -416,7 +416,7 @@ proc getMetrics(socketPath: string): string =
 
 # --- Usage ---
 proc displayUsage() =
-  let usageText = fmt"""
+  const usageText = &"""
 Unbound Exporter Lite {expVer}
 Usage: ./unbound_exporter [options]
 
