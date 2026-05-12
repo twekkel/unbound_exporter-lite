@@ -1,8 +1,8 @@
 import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, strformat, strutils, zippy
 
 const
-  expVer = "1.0.0"
-  nimVer = NimVersion
+  ExpVer = "1.0.0"
+  NimVer = NimVersion
 
   DefaultMetric = ("content-type", "text/plain; version=0.0.4; charset=utf-8")
   HTMLText      = ("content-type", "text/html; charset=utf-8")
@@ -26,7 +26,7 @@ const IndexPage = &"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Unbound Exporter Lite</title></head>
 <body>
-  <h1>Unbound Exporter Lite {expVer}</h1>
+  <h1>Unbound Exporter Lite {ExpVer}</h1>
   <p><a href="/health">Health</a></p>
   <p><a href="/metrics">Metrics</a></p>
 </body>
@@ -83,7 +83,7 @@ proc getMetrics(socketPath: string): string =
 
   addMetric("unbound_exporter_build_info", "gauge",
     "A metric with a constant '1' value labeled by version, and nimversion",
-    "1", &"""version="{expVer}",nimversion="{nimVer}"""")
+    "1", &"""version="{ExpVer}",nimversion="{NimVer}"""")
 
   let conn = socket(AF_UNIX, SOCK_STREAM, 0)
   if conn == SocketHandle(-1):
@@ -416,8 +416,8 @@ proc getMetrics(socketPath: string): string =
 
 # --- Usage ---
 proc displayUsage() =
-  const usageText = &"""
-Unbound Exporter Lite {expVer}
+  const UsageText = &"""
+Unbound Exporter Lite {ExpVer}
 Usage: ./unbound_exporter [options]
 
 Options:
@@ -425,12 +425,12 @@ Options:
   --unbound.host=unix:///run/unbound.ctl    Path to the real host root filesystem (default: /var/run/unbound.ctl)
   --help                                    Show this help message
 """
-  echo usageText
+  echo UsageText
   quit(0)
 
 # --- Server ---
 proc main() {.async.} =
-  const compressionLevel = BestSpeed
+  const CompressionLevel = BestSpeed
 
   let
     htmlHeaders    = newHttpHeaders([HTMLText, NoSniff])
@@ -471,13 +471,13 @@ proc main() {.async.} =
     elif path == "/metrics":
       let raw = getMetrics(socketPath)
       if req.headers.hasKey("Accept-Encoding") and "gzip" in req.headers["Accept-Encoding"]:
-        await req.respond(Http200, compress(raw, compressionLevel, dfGzip), gzipHeaders)
+        await req.respond(Http200, compress(raw, CompressionLevel, dfGzip), gzipHeaders)
       else:
         await req.respond(Http200, raw, noGzipHeaders)
     else:
       await req.respond(Http200, IndexPage, htmlHeaders)
 
-  info("Starting Unbound Exporter Lite ", expVer, "\n",
+  info("Starting Unbound Exporter Lite ", ExpVer, "\n",
        "Reading metrics from socket ", socketPath, "\n",
        "Metrics available at http://", address, ":", port, "/metrics")
   await server.serve(Port(port), cb, address)
