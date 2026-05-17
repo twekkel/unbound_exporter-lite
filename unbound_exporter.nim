@@ -244,6 +244,10 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_query_https_total", "counter",
           "Total number of DoH queries made towards the Unbound server.", val)
 
+      elif key == "num.query.quic":
+        addMetric("unbound_query_quic_total", "counter",
+          "Total number of DNS-over-QUIC (DoQ) queries performed towards the Unbound server.", val)
+
       elif key == "num.query.edns.present":
         addMetric("unbound_query_edns_present_total", "counter",
           "Total number of queries that had an EDNS OPT record present.", val)
@@ -263,6 +267,22 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_rpz_action_count", "counter",
           "Total number of triggered Response Policy Zone actions, by type.",
           val, &"""type="{action}"""", "unbound_rpz_action_count")
+
+      elif key == "num.dns_error_reports":
+        addMetric("unbound_dns_error_reports", "counter",
+          "Total number of DNS Error Reports generated.", val)
+
+      elif key == "num.queries_discard_timeout":
+        addMetric("unbound_queries_discard_timeout", "counter",
+          "Total number of queries removed due to discard-timeout.", val)
+
+      elif key == "num.queries_wait_limit":
+        addMetric("unbound_queries_wait_limit", "counter",
+          "Total number of queries removed due to wait-limit.", val)
+
+      elif key == "num.valops":
+        addMetric("unbound_signature_validations", "counter",
+          "Total number of signature validation operations performed by the validator module.", val)
 
       elif key.endsWith(".requestlist.avg"):
         addMetric("unbound_request_list_avg", "gauge",
@@ -331,6 +351,12 @@ proc getMetrics(socketPath: string): string =
         addMetric("unbound_memory_doh_bytes", "gauge",
           "Memory used by DoH buffers, in bytes.",
           val, &"""buffer="{buf}"""", "unbound_memory_doh_bytes")
+
+      elif key.startsWith("mem.quic."):
+        let buf = key.split('.')[2]
+        addMetric("unbound_memory_doq_bytes", "gauge",
+          "Memory used by DoQ buffers, in bytes.",
+          val, &"""buffer="{buf}"""", "unbound_memory_doq_bytes")
 
       elif key == "msg.cache.count":
         addMetric("unbound_msg_cache_count", "gauge",
