@@ -72,7 +72,7 @@ Run it with:
 | Flag | Description |
 |------|-------------|
 | `--web.listen-address=[ADDR]:PORT` | Address and port to listen on (default: `0.0.0.0:9167`) |
-| `--unbound.host=unix:///run/unbound.ctl` | Path to the real host root filesystem (default: /var/run/unbound.ctl) |
+| `--unbound.host=[path]` | Path to the remote-control socket (default: /run/unbound.ctl) |
 | `--help` | Show this help message |
 
 ### See also

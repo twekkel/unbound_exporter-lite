@@ -467,7 +467,7 @@ proc main() {.async.} =
   var
     address    = "0.0.0.0"
     port       = 9167
-    socketPath = "/var/run/unbound.ctl"
+    socketPath = "/run/unbound.ctl"
     p          = initOptParser()
 
   for kind, key, val in p.getopt():
