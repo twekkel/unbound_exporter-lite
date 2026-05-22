@@ -2,10 +2,10 @@ FROM docker.io/nimlang/nim:2.2.10 AS builder
 
 RUN apt-get update && \
   DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  musl \
-  musl-dev \
-  musl-tools \
-  --no-install-recommends
+    musl \
+    musl-dev \
+    musl-tools \
+    --no-install-recommends
 
 WORKDIR /app
 RUN nimble install -y zippy
