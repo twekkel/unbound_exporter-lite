@@ -192,7 +192,7 @@ proc getMetrics(socketPath: string): string =
           "Total number of answers that were secure (DNSSEC validated).", val)
 
       elif key == "num.answer.bogus":
-        addMetric("unbound_answers_bogus", "counter",
+        addMetric("unbound_answers_bogus_total", "counter",
           "Total number of answers that were bogus.", val)
 
       elif key == "num.rrset.bogus":
