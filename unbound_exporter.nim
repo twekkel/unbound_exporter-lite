@@ -1,7 +1,7 @@
 import algorithm, asyncdispatch, asynchttpserver, logging, parseopt, posix, strformat, strutils, zippy
 
 const
-  ExpVer = "1.0.1"
+  ExpVer = "1.0.2"
   NimVer = NimVersion
 
   DefaultMetric = ("content-type", "text/plain; version=0.0.4; charset=utf-8")
