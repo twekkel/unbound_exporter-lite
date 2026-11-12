@@ -448,7 +448,7 @@ Usage: ./unbound_exporter [options]
 
 Options:
   --web.listen-address=:9167                Address and port to listen on (default: 0.0.0.0:9167)
-  --unbound.host=unix:///run/unbound.ctl    Path to the real host root filesystem (default: /var/run/unbound.ctl)
+  --unbound.host=unix:///run/unbound.ctl    Path to the remote-control socket (default: /run/unbound.ctl)
   --help                                    Show this help message
 """
   echo UsageText
