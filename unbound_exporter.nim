@@ -49,7 +49,9 @@ proc nextLine(sr: var SocketReader): string =
     if sr.pos >= sr.len:
       sr.len = recv(sr.fd, addr(sr.buffer[0]), sr.buffer.len, 0)
       sr.pos = 0
-      if sr.len <= 0: break
+      if sr.len == 0: break  # EOF
+      if sr.len < 0:         # error (e.g. SO_RCVTIMEO timeout): not EOF
+        raise newException(OSError, "recv failed: " & $strerror(errno))
 
     let c = sr.buffer[sr.pos]
     sr.pos.inc
@@ -88,6 +90,11 @@ proc getMetrics(socketPath: string): string =
   let conn = socket(AF_UNIX, SOCK_STREAM, 0)
   if conn == SocketHandle(-1):
     raise newException(OSError, "Could not create socket handle")
+
+  # timeout so a hung unbound cannot block the exporter
+  var timeout: TimeVal
+  timeout.tv_sec = Time(2)
+  discard setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, addr timeout, sizeof(timeout).SockLen)
 
   var address: SockAddr_un
   address.sun_family = AF_UNIX.uint16
