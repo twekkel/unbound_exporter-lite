@@ -420,6 +420,8 @@ proc getMetrics(socketPath: string): string =
       addMetric("unbound_response_time_seconds_count", "histogram",
         "Query response time in seconds.",
         $cumulativeCount, "", "unbound_response_time_seconds")
+      # _sum is an approximation: unbound only reports the average
+      # recursion time, so we estimate sum = avg * bucket hit count
       addMetric("unbound_response_time_seconds_sum", "histogram",
         "Query response time in seconds.",
         $(histAvg * cumulativeCount), "", "unbound_response_time_seconds")
