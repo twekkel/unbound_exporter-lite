@@ -81,7 +81,6 @@ proc getMetrics(socketPath: string): string =
     bucketSeen      = false
     cumulativeCount = 0.0
     histAvg         = 0.0
-    totalQueries    = 0.0
 
   addMetric("unbound_exporter_build_info", "gauge",
     "A metric with a constant '1' value labeled by version, and nimversion",
@@ -126,6 +125,14 @@ proc getMetrics(socketPath: string): string =
       let tidStr   = if isThread: key.split('.')[0].replace("thread", "") else: ""
       let tlabel   = if tidStr == "": "" else: "thread=\"" & tidStr & "\""
 
+      # total.* is the sum of the thread.* counters; exporting both would
+      # double every sum(). Keep only per-thread series, except
+      # total.recursion.time.avg which feeds the histogram _sum estimate.
+      if key.startsWith("total."):
+        if key == "total.recursion.time.avg":
+          histAvg = val.parseFloat()
+        continue
+
       if key.endsWith(".num.cachehits"):
         addMetric("unbound_cache_hits_total", "counter",
           "Total number of queries that were successfully answered using a cache lookup.",
@@ -137,19 +144,13 @@ proc getMetrics(socketPath: string): string =
           val, tlabel, "unbound_cache_misses_total")
 
       elif key.endsWith(".num.queries"):
-        if isThread:
-          addMetric("unbound_queries_total", "counter",
-            "Total number of queries received.",
-            val, &"""thread="{tidStr}"""", "unbound_queries_total")
-        elif key == "total.num.queries":
-          totalQueries = val.parseFloat()
-          addMetric("unbound_queries_total", "counter",
-            "Total number of queries received.",
-            val, "", "unbound_queries_total")
+        addMetric("unbound_queries_total", "counter",
+          "Total number of queries received.",
+          val, tlabel, "unbound_queries_total")
 
-      elif key == "total.num.expired":
+      elif key.endsWith(".num.expired"):
         addMetric("unbound_expired_total", "counter",
-          "Total number of expired entries served.", val)
+          "Total number of expired entries served.", val, tlabel)
 
       elif key.endsWith(".num.prefetch"):
         addMetric("unbound_prefetches_total", "counter",
@@ -322,8 +323,6 @@ proc getMetrics(socketPath: string): string =
           val, tlabel, "unbound_request_list_current_user")
 
       elif key.endsWith(".recursion.time.avg"):
-        if key.startsWith("total"):
-          histAvg = val.parseFloat()
         addMetric("unbound_recursion_time_seconds_avg", "gauge",
           "Average time it took to answer queries that needed recursive processing.",
           val, tlabel, "unbound_recursion_time_seconds_avg")
