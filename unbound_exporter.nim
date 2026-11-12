@@ -21,6 +21,7 @@ type
 
 var
   metricStore {.threadvar.}: seq[MetricEntry]
+  shutdownRequested {.threadvar.}: bool
 
 const IndexPage = &"""<!DOCTYPE html>
 <html lang="en">
@@ -35,9 +36,8 @@ const IndexPage = &"""<!DOCTYPE html>
 
 # --- Signals ---
 proc handleSignal(sig: cint) {.noconv.} =
-  stdout.writeLine "\nINFO: Received signal " & $sig & ". Exiting cleanly..."
-  flushFile(stdout)
-  quit(0)
+  # async-signal-safe only: set a flag, the main loop handles it
+  shutdownRequested = true
 
 discard signal(SIGINT,  handleSignal)
 discard signal(SIGTERM, handleSignal)
@@ -513,6 +513,15 @@ proc main() {.async.} =
   info("Starting Unbound Exporter Lite ", ExpVer, "\n",
        "Reading metrics from socket ", socketPath, "\n",
        "Metrics available at http://", address, ":", port, "/metrics")
+
+  # poll the signal flag; the handler itself only sets it
+  proc watchShutdown() {.async.} =
+    while not shutdownRequested:
+      await sleepAsync(100)
+    info("Received signal. Exiting cleanly...")
+    quit(0)
+
+  discard watchShutdown()
   await server.serve(Port(port), cb, address)
 
 waitFor main()
