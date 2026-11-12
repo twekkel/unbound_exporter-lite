@@ -21,6 +21,7 @@ type
 
 var
   metricStore {.threadvar.}: seq[MetricEntry]
+  shutdownRequested {.threadvar.}: bool
 
 const IndexPage = &"""<!DOCTYPE html>
 <html lang="en">
@@ -35,9 +36,8 @@ const IndexPage = &"""<!DOCTYPE html>
 
 # --- Signals ---
 proc handleSignal(sig: cint) {.noconv.} =
-  stdout.writeLine "\nINFO: Received signal " & $sig & ". Exiting cleanly..."
-  flushFile(stdout)
-  quit(0)
+  # async-signal-safe only: set a flag, the main loop handles it
+  shutdownRequested = true
 
 discard signal(SIGINT,  handleSignal)
 discard signal(SIGTERM, handleSignal)
@@ -49,7 +49,9 @@ proc nextLine(sr: var SocketReader): string =
     if sr.pos >= sr.len:
       sr.len = recv(sr.fd, addr(sr.buffer[0]), sr.buffer.len, 0)
       sr.pos = 0
-      if sr.len <= 0: break
+      if sr.len == 0: break  # EOF
+      if sr.len < 0:         # error (e.g. SO_RCVTIMEO timeout): not EOF
+        raise newException(OSError, "recv failed: " & $strerror(errno))
 
     let c = sr.buffer[sr.pos]
     sr.pos.inc
@@ -79,7 +81,6 @@ proc getMetrics(socketPath: string): string =
     bucketSeen      = false
     cumulativeCount = 0.0
     histAvg         = 0.0
-    totalQueries    = 0.0
 
   addMetric("unbound_exporter_build_info", "gauge",
     "A metric with a constant '1' value labeled by version, and nimversion",
@@ -88,6 +89,11 @@ proc getMetrics(socketPath: string): string =
   let conn = socket(AF_UNIX, SOCK_STREAM, 0)
   if conn == SocketHandle(-1):
     raise newException(OSError, "Could not create socket handle")
+
+  # timeout so a hung unbound cannot block the exporter
+  var timeout: TimeVal
+  timeout.tv_sec = Time(2)
+  discard setsockopt(conn, SOL_SOCKET, SO_RCVTIMEO, addr timeout, sizeof(timeout).SockLen)
 
   var address: SockAddr_un
   address.sun_family = AF_UNIX.uint16
@@ -119,6 +125,14 @@ proc getMetrics(socketPath: string): string =
       let tidStr   = if isThread: key.split('.')[0].replace("thread", "") else: ""
       let tlabel   = if tidStr == "": "" else: "thread=\"" & tidStr & "\""
 
+      # total.* is the sum of the thread.* counters; exporting both would
+      # double every sum(). Keep only per-thread series, except
+      # total.recursion.time.avg which feeds the histogram _sum estimate.
+      if key.startsWith("total."):
+        if key == "total.recursion.time.avg":
+          histAvg = val.parseFloat()
+        continue
+
       if key.endsWith(".num.cachehits"):
         addMetric("unbound_cache_hits_total", "counter",
           "Total number of queries that were successfully answered using a cache lookup.",
@@ -130,19 +144,13 @@ proc getMetrics(socketPath: string): string =
           val, tlabel, "unbound_cache_misses_total")
 
       elif key.endsWith(".num.queries"):
-        if isThread:
-          addMetric("unbound_queries_total", "counter",
-            "Total number of queries received.",
-            val, &"""thread="{tidStr}"""", "unbound_queries_total")
-        elif key == "total.num.queries":
-          totalQueries = val.parseFloat()
-          addMetric("unbound_queries_total", "counter",
-            "Total number of queries received.",
-            val, "", "unbound_queries_total")
+        addMetric("unbound_queries_total", "counter",
+          "Total number of queries received.",
+          val, tlabel, "unbound_queries_total")
 
-      elif key == "total.num.expired":
+      elif key.endsWith(".num.expired"):
         addMetric("unbound_expired_total", "counter",
-          "Total number of expired entries served.", val)
+          "Total number of expired entries served.", val, tlabel)
 
       elif key.endsWith(".num.prefetch"):
         addMetric("unbound_prefetches_total", "counter",
@@ -185,7 +193,7 @@ proc getMetrics(socketPath: string): string =
           "Total number of answers that were secure (DNSSEC validated).", val)
 
       elif key == "num.answer.bogus":
-        addMetric("unbound_answers_bogus", "counter",
+        addMetric("unbound_answers_bogus_total", "counter",
           "Total number of answers that were bogus.", val)
 
       elif key == "num.rrset.bogus":
@@ -315,8 +323,6 @@ proc getMetrics(socketPath: string): string =
           val, tlabel, "unbound_request_list_current_user")
 
       elif key.endsWith(".recursion.time.avg"):
-        if key.startsWith("total"):
-          histAvg = val.parseFloat()
         addMetric("unbound_recursion_time_seconds_avg", "gauge",
           "Average time it took to answer queries that needed recursive processing.",
           val, tlabel, "unbound_recursion_time_seconds_avg")
@@ -413,6 +419,8 @@ proc getMetrics(socketPath: string): string =
       addMetric("unbound_response_time_seconds_count", "histogram",
         "Query response time in seconds.",
         $cumulativeCount, "", "unbound_response_time_seconds")
+      # _sum is an approximation: unbound only reports the average
+      # recursion time, so we estimate sum = avg * bucket hit count
       addMetric("unbound_response_time_seconds_sum", "histogram",
         "Query response time in seconds.",
         $(histAvg * cumulativeCount), "", "unbound_response_time_seconds")
@@ -448,7 +456,7 @@ Usage: ./unbound_exporter [options]
 
 Options:
   --web.listen-address=:9167                Address and port to listen on (default: 0.0.0.0:9167)
-  --unbound.host=unix:///run/unbound.ctl    Path to the real host root filesystem (default: /var/run/unbound.ctl)
+  --unbound.host=unix:///run/unbound.ctl    Path to the remote-control socket (default: /run/unbound.ctl)
   --help                                    Show this help message
 """
   echo UsageText
@@ -506,6 +514,15 @@ proc main() {.async.} =
   info("Starting Unbound Exporter Lite ", ExpVer, "\n",
        "Reading metrics from socket ", socketPath, "\n",
        "Metrics available at http://", address, ":", port, "/metrics")
+
+  # poll the signal flag; the handler itself only sets it
+  proc watchShutdown() {.async.} =
+    while not shutdownRequested:
+      await sleepAsync(100)
+    info("Received signal. Exiting cleanly...")
+    quit(0)
+
+  discard watchShutdown()
   await server.serve(Port(port), cb, address)
 
 waitFor main()
